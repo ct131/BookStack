@@ -19,31 +19,32 @@ class OpsAnySsoMiddleware
         logger()->info('[OPSANY SSO] Incoming request', [
             'url' => $request->fullUrl(),
             'cookie' => $request->header('Cookie'),
-            'headers' => $request->headers->all(),
         ]);
 
-        // 1️⃣ 已登录，直接放行
-        if (Auth::check()) {
-            return $next($request);
-        }
-
         try {
-            // 2️⃣ 调用 OpsAny user-info API（带 Cookie，跳过 SSL 验证）
+            // 1️⃣ 调用 OpsAny user-info API（带 Cookie，跳过 SSL 验证）
             $response = Http::withHeaders([
                 'Cookie' => $request->header('Cookie'),
-            ])->withOptions(['verify' => false])
-                ->get($this->userInfoApi);
+            ])->withOptions([
+                'verify' => false,
+            ])->get($this->userInfoApi);
 
-            // 3️⃣ 输出调试日志
+            // 2️⃣ 输出 API 调试信息
             logger()->info('[OPSANY SSO] API response', [
                 'status' => $response->status(),
-                'body' => $response->body(),
-                'json' => $response->json(),
+                'body'   => $response->body(),
             ]);
 
+            // OpsAny 未登录 / token 失效
             if (!$response->ok()) {
-                logger()->error('[OPSANY SSO] API request failed', ['status' => $response->status()]);
-                return $next($request); // 可选择 abort(401) 或继续访问
+                if (Auth::check()) {
+                    logger()->info('[OPSANY SSO] OpsAny logged out, force BookStack logout');
+                    Auth::logout();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+                }
+
+                return $next($request);
             }
 
             $data = $response->json('data');
@@ -54,7 +55,26 @@ class OpsAnySsoMiddleware
             }
 
             $username = $data['username'];
-            $email = $data['email'] ?? $username . '@opsany.local';
+            $email = $data['email'] ?? ($username . '@opsany.local');
+
+            // 3️⃣ 已登录但用户不一致 → 强制切换账号
+            if (Auth::check()) {
+                $currentUser = Auth::user();
+
+                if ($currentUser->email !== $email) {
+                    logger()->info('[OPSANY SSO] User switched', [
+                        'from' => $currentUser->email,
+                        'to'   => $email,
+                    ]);
+
+                    Auth::logout();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+                } else {
+                    // 同一个用户，直接放行
+                    return $next($request);
+                }
+            }
 
             // 4️⃣ 查找或创建 BookStack 用户
             $user = User::where('email', $email)->first();
@@ -64,27 +84,41 @@ class OpsAnySsoMiddleware
                 $user->name = $username;
                 $user->email = $email;
                 $user->password = bcrypt(Str::random(32));
-                // 自动生成唯一 slug
+
+                // 生成唯一 slug（兼容 BookStack 约束）
                 $baseSlug = Str::slug($username);
                 $slug = $baseSlug;
                 $counter = 1;
+
                 while (User::where('slug', $slug)->exists()) {
                     $slug = $baseSlug . '-' . $counter;
                     $counter++;
                 }
+
                 $user->slug = $slug;
                 $user->save();
+
                 $user->attachDefaultRole();
+
+                logger()->info('[OPSANY SSO] Created BookStack user', [
+                    'email' => $email,
+                    'slug'  => $slug,
+                ]);
             }
 
             // 5️⃣ 登录 BookStack
             Auth::login($user);
 
-            logger()->info('[OPSANY SSO] User logged in', ['username' => $username, 'email' => $email]);
+            logger()->info('[OPSANY SSO] User logged in', [
+                'username' => $username,
+                'email'    => $email,
+            ]);
 
-        } catch (\Exception $e) {
-            logger()->error('[OPSANY SSO] Request exception', ['error' => $e->getMessage()]);
-            // 可选择 abort(500) 或继续访问
+        } catch (\Throwable $e) {
+            logger()->error('[OPSANY SSO] Exception', [
+                'error' => $e->getMessage(),
+            ]);
+
             return $next($request);
         }
 
