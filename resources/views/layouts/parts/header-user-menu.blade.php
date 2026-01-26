@@ -46,13 +46,13 @@
                     default => '/logout',
                 }
             @endphp
-            <form action="{{ url($logoutPath) }}" method="post">
+            {{-- <form action="{{ url($logoutPath) }}" method="post">
                 {{ csrf_field() }}
                 <button class="icon-item" role="menuitem" data-shortcut="logout">
                     @icon('logout')
                     <div>{{ trans('auth.logout') }}</div>
                 </button>
-            </form>
+            </form>--}}
         </li>
     </ul>
 </div>

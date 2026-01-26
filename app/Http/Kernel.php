@@ -31,6 +31,7 @@ class Kernel extends HttpKernel
             \BookStack\Http\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \BookStack\Http\Middleware\StartSessionExtended::class,
+            \BookStack\Http\Middleware\OpsAnySsoMiddleware::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \BookStack\Http\Middleware\VerifyCsrfToken::class,
             \BookStack\Http\Middleware\CheckEmailConfirmed::class,

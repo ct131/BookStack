@@ -21,6 +21,7 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
+
 // Status & Meta routes
 Route::get('/status', [SettingControllers\StatusController::class, 'show']);
 Route::get('/robots.txt', [MetaController::class, 'robots']);
@@ -382,3 +383,5 @@ Route::get('/theme/{theme}/{path}', [ThemeController::class, 'publicFile'])
     ->where('path', '.*$');
 
 Route::fallback([MetaController::class, 'notFound'])->name('fallback');
+
+
